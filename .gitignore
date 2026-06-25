@@ -1,0 +1,9 @@
+.env
+*.log
+logs/
+.wrangler/
+dist/
+*.exe
+.DS_Store
+node_modules/
+mcps/
