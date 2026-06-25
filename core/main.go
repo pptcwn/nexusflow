@@ -2,6 +2,7 @@ package main
 
 import (
 	"log"
+
 	"nexusflow/core/config"
 	"nexusflow/core/decision"
 	"nexusflow/core/fingerprint"
@@ -18,14 +19,24 @@ func main() {
 
 	r.POST("/decide", func(c *gin.Context) {
 		var fp fingerprint.Fingerprint
-		c.ShouldBindJSON(&fp)
+		if err := c.ShouldBindJSON(&fp); err != nil {
+			c.JSON(400, gin.H{"error": "invalid json"})
+			return
+		}
+		if redisclient.IsRateLimited(fp.IP, cfg) {
+			c.JSON(200, decision.Decision{Mode: "review", AllowProgressive: false})
+			return
+		}
 		result := decision.MakeDecision(fp, cfg)
 		c.JSON(200, result)
 	})
 
 	r.POST("/behavior", func(c *gin.Context) {
 		var data map[string]interface{}
-		c.ShouldBindJSON(&data)
+		if err := c.ShouldBindJSON(&data); err != nil {
+			c.JSON(400, gin.H{"error": "invalid json"})
+			return
+		}
 		c.JSON(200, gin.H{"status": "ok"})
 	})
 
@@ -38,5 +49,7 @@ func main() {
 		c.JSON(200, gin.H{"status": "running"})
 	})
 
-	r.Run(":" + cfg.Port)
+	if err := r.Run(":" + cfg.Port); err != nil {
+		log.Fatal(err)
+	}
 }
