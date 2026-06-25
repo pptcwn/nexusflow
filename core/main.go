@@ -15,6 +15,13 @@ func main() {
 	cfg := config.Load()
 	redisclient.Init(cfg)
 
+	r := setupRouter(cfg)
+	if err := r.Run(":" + cfg.Port); err != nil {
+		log.Fatal(err)
+	}
+}
+
+func setupRouter(cfg *config.Config) *gin.Engine {
 	r := gin.Default()
 
 	r.POST("/decide", func(c *gin.Context) {
@@ -37,7 +44,7 @@ func main() {
 			c.JSON(400, gin.H{"error": "invalid json"})
 			return
 		}
-		c.JSON(200, gin.H{"status": "ok"})
+		c.Status(204)
 	})
 
 	r.POST("/killswitch", func(c *gin.Context) {
@@ -49,7 +56,5 @@ func main() {
 		c.JSON(200, gin.H{"status": "running"})
 	})
 
-	if err := r.Run(":" + cfg.Port); err != nil {
-		log.Fatal(err)
-	}
+	return r
 }

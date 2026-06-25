@@ -1,4 +1,3 @@
-<script>
 let behavior = {
     watchTime: 0,
     mouseMoves: 0,
@@ -246,9 +245,48 @@ function sendBehaviorData() {
     fetch('/behavior', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(behavior),
+        body: JSON.stringify(buildBehaviorPayload()),
         keepalive: true
     }).catch(() => {});
+}
+
+function buildBehaviorPayload() {
+    return {
+        watchTime: roundMetric(behavior.watchTime),
+        mouseMoves: behavior.mouseMoves,
+        scrolls: behavior.scrolls,
+        clicks: behavior.clicks,
+        timeOnPage: roundMetric(behavior.timeOnPage),
+        timeOnPageBucket: bucketSeconds(behavior.timeOnPage),
+        hasInteraction: behavior.hasInteraction,
+        videoWatched: behavior.videoWatched,
+        isHeadless: behavior.isHeadless,
+        webdriver: behavior.webdriver,
+        automationFlags: behavior.automationFlags,
+        pluginCount: behavior.pluginCount,
+        languageCount: behavior.languageCount,
+        mousePatternScore: roundMetric(behavior.mousePatternScore),
+        averageSpeed: roundMetric(behavior.averageSpeed),
+        jerkScore: roundMetric(behavior.jerkScore),
+        accelerationMean: roundMetric(behavior.accelerationMean),
+        accelerationVariance: roundMetric(behavior.accelerationVariance),
+        accelerationDistributionScore: roundMetric(behavior.accelerationDistributionScore),
+        webglDetection: behavior.webglDetection,
+        audioContext: behavior.audioContext,
+    };
+}
+
+function roundMetric(value) {
+    if (typeof value !== 'number' || !Number.isFinite(value)) return 0;
+    return Math.round(value * 1000) / 1000;
+}
+
+function bucketSeconds(seconds) {
+    if (seconds < 5) return '0-5';
+    if (seconds < 15) return '5-15';
+    if (seconds < 30) return '15-30';
+    if (seconds < 60) return '30-60';
+    return '60+';
 }
 
 // ====================== 7. Initialization ======================
@@ -263,4 +301,3 @@ function initTracking() {
 }
 
 window.addEventListener('load', initTracking);
-</script>
