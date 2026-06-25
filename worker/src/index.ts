@@ -15,6 +15,7 @@ const REVIEW_DECISION: Decision = {
   confidence: 0,
   allowProgressive: false,
 };
+const STANDARD_CONFIDENCE_THRESHOLD = 0.52;
 
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
@@ -35,11 +36,15 @@ export default {
     };
 
     const decision = await getDecision(fingerprint, env.BACKEND_URL);
-    const origin = decision.mode === "standard" ? env.STANDARD_ORIGIN : env.REVIEW_ORIGIN;
+    const origin = isStandardDecision(decision) ? env.STANDARD_ORIGIN : env.REVIEW_ORIGIN;
 
     return fetchOrigin(request, origin, url);
   },
 };
+
+function isStandardDecision(decision: Decision): boolean {
+  return decision.mode === "standard" && decision.confidence >= STANDARD_CONFIDENCE_THRESHOLD;
+}
 
 function isSuspiciousCloudflareSignal(botScore: string | null, threatScore: string | null): boolean {
   const parsedBotScore = botScore ? Number.parseInt(botScore, 10) : null;

@@ -2,6 +2,7 @@
 *.log
 logs/
 .wrangler/
+worker/.tmp/
 dist/
 *.exe
 .DS_Store
