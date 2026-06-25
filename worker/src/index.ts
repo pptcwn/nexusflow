@@ -1,21 +1,31 @@
 export interface Env {
   BACKEND_URL: string;
-  S_ORIGIN: string;
-  M_ORIGIN: string;
+  STANDARD_ORIGIN: string;
+  REVIEW_ORIGIN: string;
 }
 
+type Decision = {
+  mode: "review" | "standard";
+  confidence: number;
+  allowProgressive: boolean;
+};
+
+const REVIEW_DECISION: Decision = {
+  mode: "review",
+  confidence: 0,
+  allowProgressive: false,
+};
+
 export default {
-  async fetch(request: Request, env: Env) {
+  async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
 
-    // WAF Check
     const botScore = request.headers.get("cf-bot-score");
     const threatScore = request.headers.get("cf-threat-score");
-    if ((botScore && parseInt(botScore) < 20) || (threatScore && parseInt(threatScore) > 45)) {
-      return fetch(env.S_ORIGIN + url.pathname + url.search, request);
+    if (isSuspiciousCloudflareSignal(botScore, threatScore)) {
+      return fetchOrigin(request, env.REVIEW_ORIGIN, url);
     }
 
-    // ส่ง Fingerprint ไป Backend
     const fingerprint = {
       ip: request.headers.get("cf-connecting-ip") || "",
       country: request.headers.get("cf-ipcountry") || "XX",
@@ -25,62 +35,49 @@ export default {
     };
 
     const decision = await getDecision(fingerprint, env.BACKEND_URL);
+    const origin = decision.mode === "standard" ? env.STANDARD_ORIGIN : env.REVIEW_ORIGIN;
 
-    // โหลด Safe Page เป็นหลัก
-    let response = await fetch(env.S_ORIGIN + url.pathname + url.search, request);
-
-    // Progressive Injection
-    if (decision.mode === "m" && decision.confidence >= 0.75 && decision.allowProgressive) {
-      response = await injectProgressive(response, env.M_ORIGIN, decision);
-    }
-
-    return response;
-  }
+    return fetchOrigin(request, origin, url);
+  },
 };
 
-async function getDecision(fp: any, backendUrl: string) {
+function isSuspiciousCloudflareSignal(botScore: string | null, threatScore: string | null): boolean {
+  const parsedBotScore = botScore ? Number.parseInt(botScore, 10) : null;
+  const parsedThreatScore = threatScore ? Number.parseInt(threatScore, 10) : null;
+
+  return (
+    (parsedBotScore !== null && parsedBotScore < 20) ||
+    (parsedThreatScore !== null && parsedThreatScore > 45)
+  );
+}
+
+async function getDecision(fp: Record<string, unknown>, backendUrl: string): Promise<Decision> {
   try {
     const res = await fetch(`${backendUrl}/decide`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(fp),
     });
-    return res.ok ? await res.json() : { mode: "s", confidence: 0, allowProgressive: false };
+    if (!res.ok) {
+      return REVIEW_DECISION;
+    }
+
+    const decision = (await res.json()) as Partial<Decision>;
+    if (decision.mode !== "standard" && decision.mode !== "review") {
+      return REVIEW_DECISION;
+    }
+
+    return {
+      mode: decision.mode,
+      confidence: typeof decision.confidence === "number" ? decision.confidence : 0,
+      allowProgressive: decision.allowProgressive === true,
+    };
   } catch {
-    return { mode: "s", confidence: 0, allowProgressive: false };
+    return REVIEW_DECISION;
   }
 }
 
-async function injectProgressive(response: Response, mOrigin: string, decision: any) {
-  if (!response.headers.get("content-type")?.includes("text/html")) return response;
-
-  const html = await response.text();
-  const script = `
-<script>
-(function() {
-  let interacted = false;
-  const mark = () => interacted = true;
-  document.addEventListener('click', mark, { once: true });
-  document.addEventListener('scroll', mark, { once: true });
-
-  setTimeout(() => {
-    if (interacted) {
-      fetch('${mOrigin}/m-content')
-        .then(r => r.text())
-        .then(content => {
-          document.body.style.transition = 'opacity .4s';
-          document.body.style.opacity = '0.2';
-          setTimeout(() => {
-            document.body.innerHTML = content;
-            document.body.style.opacity = '1';
-          }, 300);
-        });
-    }
-  }, 2500);
-})();
-</script>`;
-
-  return new Response(html.replace('</body>', script + '</body>'), {
-    headers: response.headers
-  });
+function fetchOrigin(request: Request, origin: string, requestUrl: URL): Promise<Response> {
+  const target = new URL(requestUrl.pathname + requestUrl.search, origin);
+  return fetch(new Request(target, request));
 }

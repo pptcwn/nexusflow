@@ -1,7 +1,9 @@
 name = "nexusflow-worker"
 main = "src/index.ts"
-compatibility_date = "2026-06-01"
-compatibility_flags = ["nodejs_compat"]
+compatibility_date = "2026-06-25"
 
 [vars]
 ENVIRONMENT = "production"
+BACKEND_URL = "https://your-backend.example.com"
+STANDARD_ORIGIN = "https://standard.yourdomain.com"
+REVIEW_ORIGIN = "https://review.yourdomain.com"
