@@ -1,7 +1,10 @@
 package main
 
 import (
+	"errors"
 	"log"
+	"net/http"
+	"strings"
 
 	"nexusflow/core/config"
 	"nexusflow/core/decision"
@@ -10,6 +13,8 @@ import (
 
 	"github.com/gin-gonic/gin"
 )
+
+const maxJSONBodyBytes int64 = 64 * 1024
 
 func main() {
 	cfg := config.Load()
@@ -23,11 +28,16 @@ func main() {
 
 func setupRouter(cfg *config.Config) *gin.Engine {
 	r := gin.Default()
+	r.Use(limitJSONBody(maxJSONBodyBytes))
 
 	r.POST("/decide", func(c *gin.Context) {
 		var fp fingerprint.Fingerprint
 		if err := c.ShouldBindJSON(&fp); err != nil {
-			c.JSON(400, gin.H{"error": "invalid json"})
+			writeJSONBindError(c, err)
+			return
+		}
+		if isBlockedCountry(fp.Country, cfg.BlockCountries) {
+			c.JSON(200, decision.Decision{Mode: "review", AllowProgressive: false})
 			return
 		}
 		if redisclient.IsRateLimited(fp.IP, cfg) {
@@ -41,7 +51,7 @@ func setupRouter(cfg *config.Config) *gin.Engine {
 	r.POST("/behavior", func(c *gin.Context) {
 		var data map[string]interface{}
 		if err := c.ShouldBindJSON(&data); err != nil {
-			c.JSON(400, gin.H{"error": "invalid json"})
+			writeJSONBindError(c, err)
 			return
 		}
 		c.Status(204)
@@ -57,4 +67,35 @@ func setupRouter(cfg *config.Config) *gin.Engine {
 	})
 
 	return r
+}
+
+func limitJSONBody(maxBytes int64) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		if c.Request.Method == http.MethodPost && (c.FullPath() == "/decide" || c.FullPath() == "/behavior") {
+			c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, maxBytes)
+		}
+		c.Next()
+	}
+}
+
+func writeJSONBindError(c *gin.Context, err error) {
+	var maxBytesErr *http.MaxBytesError
+	if errors.As(err, &maxBytesErr) {
+		c.JSON(http.StatusRequestEntityTooLarge, gin.H{"error": "request body too large"})
+		return
+	}
+	c.JSON(http.StatusBadRequest, gin.H{"error": "invalid json"})
+}
+
+func isBlockedCountry(country string, blockedCountries []string) bool {
+	country = strings.ToUpper(strings.TrimSpace(country))
+	if country == "" {
+		return false
+	}
+	for _, blocked := range blockedCountries {
+		if country == strings.ToUpper(strings.TrimSpace(blocked)) {
+			return true
+		}
+	}
+	return false
 }

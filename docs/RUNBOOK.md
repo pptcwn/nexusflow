@@ -101,3 +101,19 @@ Set these backend environment variables to route all decisions to review mode:
 KILL_SWITCH_ENABLED=true
 GLOBAL_MODE=review
 ```
+
+## Safety Controls
+
+JSON request bodies for `/decide` and `/behavior` are capped at 64KB. Oversized requests return HTTP 413.
+
+Requests from countries listed in `BLOCK_COUNTRIES` return `review` mode before scoring:
+
+```dotenv
+BLOCK_COUNTRIES=RU,CN
+```
+
+Redis-backed rate limiting uses `RATE_LIMIT_PER_MIN` and routes rate-limited IPs to `review` mode:
+
+```dotenv
+RATE_LIMIT_PER_MIN=40
+```
